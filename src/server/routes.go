@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nkanaev/yarr/src/assets"
 	"github.com/nkanaev/yarr/src/content/htmlutil"
@@ -21,6 +22,7 @@ import (
 	"github.com/nkanaev/yarr/src/server/opml"
 	"github.com/nkanaev/yarr/src/server/router"
 	"github.com/nkanaev/yarr/src/storage"
+	"github.com/nkanaev/yarr/src/summarizer"
 	"github.com/nkanaev/yarr/src/worker"
 )
 
@@ -53,6 +55,7 @@ func (s *Server) handler() http.Handler {
 	r.For("/api/feeds/:id", s.handleFeed)
 	r.For("/api/items", s.handleItemList)
 	r.For("/api/items/:id", s.handleItem)
+	r.For("/api/items/:id/summarize", s.handleItemSummarize)
 	r.For("/api/settings", s.handleSettings)
 	r.For("/opml/import", s.handleOPMLImport)
 	r.For("/opml/export", s.handleOPMLExport)
@@ -540,4 +543,99 @@ func (s *Server) handlePageCrawl(c *router.Context) {
 func (s *Server) handleLogout(c *router.Context) {
 	auth.Logout(c.Out, s.BasePath)
 	c.Out.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleItemSummarize(c *router.Context) {
+	if c.Req.Method != "POST" {
+		c.Out.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	id, err := c.VarInt64("id")
+	if err != nil {
+		c.Out.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// Get the item from database
+	item := s.db.GetItem(id)
+	if item == nil {
+		c.Out.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// Check if regenerate is requested
+	regenerate := c.Req.URL.Query().Get("regenerate") == "true"
+
+	// If summary exists and not regenerating, return cached
+	if item.AISummary != nil && !regenerate {
+		c.JSON(http.StatusOK, map[string]interface{}{
+			"summary":      *item.AISummary,
+			"generated_at": *item.AISummaryAt,
+		})
+		return
+	}
+
+	// Get AI configuration from settings
+	settings := s.db.GetSettings()
+	provider, _ := settings["ai_provider"].(string)
+
+	if provider == "" || provider == "disabled" {
+		c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "AI provider not configured",
+		})
+		return
+	}
+
+	// Create summarizer config
+	config := summarizer.Config{
+		Provider: provider,
+	}
+
+	if provider == "gemini" {
+		if apiKey, ok := settings["gemini_api_key"].(string); ok {
+			config.GeminiAPIKey = apiKey
+		}
+	} else if provider == "ollama" {
+		if url, ok := settings["ollama_url"].(string); ok {
+			config.OllamaURL = url
+		}
+		if model, ok := settings["ollama_model"].(string); ok {
+			config.OllamaModel = model
+		}
+	}
+
+	// Create summarizer
+	sum, err := summarizer.New(config)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Generate summary
+	ctx := c.Req.Context()
+	summary, err := sum.Summarize(ctx, item.Title, item.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to generate summary: " + err.Error(),
+		})
+		return
+	}
+
+	// Save summary to database
+	timestamp := time.Now().Unix()
+	if !s.db.UpdateItemAISummary(id, summary, timestamp) {
+		c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to save summary",
+		})
+		return
+	}
+
+	// Return the summary
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"summary":      summary,
+		"generated_at": timestamp,
+	})
 }

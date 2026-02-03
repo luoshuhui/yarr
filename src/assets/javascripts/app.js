@@ -259,6 +259,14 @@ var vm = new Vue({
       'authenticated': app.authenticated,
       'feed_errors': {},
 
+      'aiSettings': {
+        'provider': s.ai_provider || 'disabled',
+        'geminiApiKey': s.gemini_api_key || '',
+        'ollamaUrl': s.ollama_url || 'http://localhost:11434',
+        'ollamaModel': s.ollama_model || 'qwen2:4b',
+      },
+      'summarizing': false,
+
       'refreshRateOptions': [
         { title: "0", value: 0 },
         { title: "10m", value: 10 },
@@ -330,6 +338,9 @@ var vm = new Vue({
     refreshRateTitle: function () {
       const entry = this.refreshRateOptions.find(o => o.value === this.refreshRate)
       return entry ? entry.title : '0'
+    },
+    aiProvider: function() {
+      return this.aiSettings.provider
     },
   },
   watch: {
@@ -699,7 +710,108 @@ var vm = new Vue({
       if (settings === 'create') {
         vm.feedNewChoice = []
         vm.feedNewChoiceSelected = ''
+      } else if (settings === 'ai') {
+        // Load current AI settings from app.settings
+        var s = app.settings
+        this.aiSettings = {
+          provider: s.ai_provider || 'disabled',
+          geminiApiKey: s.gemini_api_key || '',
+          ollamaUrl: s.ollama_url || 'http://localhost:11434',
+          ollamaModel: s.ollama_model || 'qwen2:4b',
+        }
       }
+    },
+    saveAISettings: function() {
+      api.settings.update({
+        ai_provider: this.aiSettings.provider,
+        gemini_api_key: this.aiSettings.geminiApiKey,
+        ollama_url: this.aiSettings.ollamaUrl,
+        ollama_model: this.aiSettings.ollamaModel,
+      }).then(function() {
+        // Update app.settings to reflect changes
+        app.settings.ai_provider = vm.aiSettings.provider
+        app.settings.gemini_api_key = vm.aiSettings.geminiApiKey
+        app.settings.ollama_url = vm.aiSettings.ollamaUrl
+        app.settings.ollama_model = vm.aiSettings.ollamaModel
+        vm.settings = ''
+      })
+    },
+    summarizeArticle: function() {
+      if (!this.itemSelectedDetails) return
+
+      this.summarizing = true
+      var regenerate = !!this.itemSelectedDetails.ai_summary
+
+      api.items.summarize(this.itemSelectedDetails.id, regenerate).then(function(result) {
+        vm.itemSelectedDetails.ai_summary = result.summary
+        vm.itemSelectedDetails.ai_summary_at = result.generated_at
+        vm.summarizing = false
+      }).catch(function(err) {
+        alert('Failed to generate summary: ' + (err.message || 'Unknown error'))
+        vm.summarizing = false
+      })
+    },
+    formatTimeAgo: function(timestamp) {
+      if (!timestamp) return ''
+      var now = Math.floor(Date.now() / 1000)
+      var diff = now - timestamp
+
+      if (diff < 60) return 'just now'
+      if (diff < 3600) return Math.floor(diff / 60) + ' minutes ago'
+      if (diff < 86400) return Math.floor(diff / 3600) + ' hours ago'
+      if (diff < 2592000) return Math.floor(diff / 86400) + ' days ago'
+      return 'on ' + new Date(timestamp * 1000).toLocaleDateString()
+    },
+    translatePage: function() {
+      // Simulate Option+A (macOS) / Alt+A (Windows) keyboard shortcut
+      // This is the default shortcut for Immersive Translate
+      var isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+
+      // Trigger on window object to avoid yarr's key.js handler
+      var target = window
+
+      // Create keydown event
+      var keydownEvent = new KeyboardEvent('keydown', {
+        key: 'a',
+        code: 'KeyA',
+        keyCode: 65,
+        which: 65,
+        charCode: 97,
+        altKey: true,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window
+      })
+
+      // Create keyup event
+      var keyupEvent = new KeyboardEvent('keyup', {
+        key: 'a',
+        code: 'KeyA',
+        keyCode: 65,
+        which: 65,
+        charCode: 0,
+        altKey: true,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window
+      })
+
+      // Dispatch to window instead of document to avoid key.js interception
+      window.dispatchEvent(keydownEvent)
+
+      setTimeout(function() {
+        window.dispatchEvent(keyupEvent)
+      }, 50)
+
+      console.log('Triggered ' + (isMac ? 'Option+A' : 'Alt+A') + ' shortcut for Immersive Translate')
     },
     resizeFeedList: function(width) {
       this.feedListWidth = Math.min(Math.max(200, width), 700)

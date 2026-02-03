@@ -83,6 +83,9 @@
       mark_read: function(query) {
         return api('put', './api/items' + param(query))
       },
+      summarize: function(id, regenerate) {
+        return api('post', './api/items/' + id + '/summarize?regenerate=' + (regenerate ? 'true' : 'false')).then(json)
+      },
     },
     settings: {
       get: function() {

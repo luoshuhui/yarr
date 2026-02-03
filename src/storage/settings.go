@@ -16,6 +16,10 @@ func settingsDefaults() map[string]interface{} {
 		"theme_font":        "",
 		"theme_size":        1,
 		"refresh_rate":      0,
+		"ai_provider":       "disabled",
+		"gemini_api_key":    "",
+		"ollama_url":        "http://localhost:11434",
+		"ollama_model":      "qwen2:4b",
 	}
 }
 

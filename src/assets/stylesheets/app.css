@@ -612,3 +612,58 @@ a,
     padding: .5rem;
   }
 }
+
+/* AI Summary Box Styles */
+
+.ai-summary-box {
+  background: #f8f9fa;
+  border-left: 4px solid #007bff;
+  padding: 15px;
+  margin: 15px 0;
+  border-radius: 4px;
+}
+
+.theme-night .ai-summary-box {
+  background: #1a1a1a;
+  border-left-color: #4a9eff;
+}
+
+.theme-sepia .ai-summary-box {
+  background: #e8e4d9;
+  border-left-color: #8b7355;
+}
+
+.ai-summary-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #6c757d;
+}
+
+.theme-night .ai-summary-header {
+  color: #999;
+}
+
+.theme-sepia .ai-summary-header {
+  color: #8b7355;
+}
+
+.ai-summary-content {
+  line-height: 1.6;
+  color: #212529;
+  white-space: pre-wrap;
+}
+
+.theme-night .ai-summary-content {
+  color: #e0e0e0;
+}
+
+.theme-sepia .ai-summary-content {
+  color: #3a3a3a;
+}
+
+.summary-time {
+  font-size: 12px;
+  font-style: italic;
+}
