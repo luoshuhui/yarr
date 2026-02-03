@@ -616,54 +616,91 @@ a,
 /* AI Summary Box Styles */
 
 .ai-summary-box {
-  background: #f8f9fa;
-  border-left: 4px solid #007bff;
-  padding: 15px;
-  margin: 15px 0;
-  border-radius: 4px;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%);
+  border: 2px solid #4a9eff;
+  border-left: 6px solid #007bff;
+  padding: 20px;
+  margin: 20px 0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+  position: relative;
+}
+
+.ai-summary-box::before {
+  content: "🤖";
+  position: absolute;
+  top: -12px;
+  left: 20px;
+  background: #007bff;
+  color: white;
+  font-size: 20px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
 }
 
 .theme-night .ai-summary-box {
-  background: #1a1a1a;
-  border-left-color: #4a9eff;
+  background: linear-gradient(135deg, #1a2332 0%, #0f1721 100%);
+  border-color: #4a9eff;
+  box-shadow: 0 4px 12px rgba(74, 158, 255, 0.25);
+}
+
+.theme-night .ai-summary-box::before {
+  background: #4a9eff;
 }
 
 .theme-sepia .ai-summary-box {
-  background: #e8e4d9;
+  background: linear-gradient(135deg, #f5f0e5 0%, #ebe4d5 100%);
+  border-color: #a08060;
   border-left-color: #8b7355;
+  box-shadow: 0 4px 12px rgba(139, 115, 85, 0.15);
+}
+
+.theme-sepia .ai-summary-box::before {
+  background: #8b7355;
 }
 
 .ai-summary-header {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 10px;
-  font-size: 14px;
-  color: #6c757d;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 123, 255, 0.2);
+  font-size: 15px;
+  font-weight: 600;
+  color: #007bff;
 }
 
 .theme-night .ai-summary-header {
-  color: #999;
+  color: #4a9eff;
+  border-bottom-color: rgba(74, 158, 255, 0.2);
 }
 
 .theme-sepia .ai-summary-header {
   color: #8b7355;
+  border-bottom-color: rgba(139, 115, 85, 0.2);
 }
 
 .ai-summary-content {
-  line-height: 1.6;
-  color: #212529;
+  line-height: 1.8;
+  color: #1a1a1a;
   white-space: pre-wrap;
+  font-size: 15px;
+  padding-left: 8px;
 }
 
 .theme-night .ai-summary-content {
-  color: #e0e0e0;
+  color: #e8e8e8;
 }
 
 .theme-sepia .ai-summary-content {
-  color: #3a3a3a;
+  color: #2a2a2a;
 }
 
 .summary-time {
   font-size: 12px;
   font-style: italic;
+  opacity: 0.7;
+  font-weight: normal;
 }

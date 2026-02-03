@@ -56,16 +56,18 @@ func New(config Config) (Summarizer, error) {
 
 // buildPrompt constructs the summarization prompt
 func buildPrompt(title, content string) string {
-	return fmt.Sprintf(`Please provide a concise summary of the following article in 3-5 bullet points. Focus on the main ideas and key takeaways.
+	return fmt.Sprintf(`请用中文总结以下文章的主要内容，生成3-5个要点。无论文章是什么语言，总结必须使用中文输出。
 
-Title: %s
+文章标题: %s
 
-Content: %s
+文章内容: %s
 
-Requirements:
-- Use the same language as the article
-- Keep each point under 50 words
-- Focus on facts, not opinions`, title, content)
+要求:
+- 必须使用中文输出总结
+- 提取3-5个主要观点
+- 每个要点不超过50字
+- 重点关注事实，而非观点
+- 使用简洁清晰的语言`, title, content)
 }
 
 // truncateContent truncates content to a maximum length to avoid API limits
