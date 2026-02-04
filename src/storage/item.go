@@ -69,17 +69,20 @@ func (m MediaLinks) Value() (driver.Value, error) {
 }
 
 type Item struct {
-	Id          int64      `json:"id"`
-	GUID        string     `json:"guid"`
-	FeedId      int64      `json:"feed_id"`
-	Title       string     `json:"title"`
-	Link        string     `json:"link"`
-	Content     string     `json:"content,omitempty"`
-	Date        time.Time  `json:"date"`
-	Status      ItemStatus `json:"status"`
-	MediaLinks  MediaLinks `json:"media_links"`
-	AISummary   *string    `json:"ai_summary,omitempty"`
-	AISummaryAt *int64     `json:"ai_summary_at,omitempty"`
+	Id              int64      `json:"id"`
+	GUID            string     `json:"guid"`
+	FeedId          int64      `json:"feed_id"`
+	Title           string     `json:"title"`
+	Link            string     `json:"link"`
+	Content         string     `json:"content,omitempty"`
+	Date            time.Time  `json:"date"`
+	Status          ItemStatus `json:"status"`
+	MediaLinks      MediaLinks `json:"media_links"`
+	AISummary       *string    `json:"ai_summary,omitempty"`
+	AISummaryAt     *int64     `json:"ai_summary_at,omitempty"`
+	Translation     *string    `json:"translation,omitempty"`
+	TranslationAt   *int64     `json:"translation_at,omitempty"`
+	TranslationLang *string    `json:"translation_lang,omitempty"`
 }
 
 type ItemFilter struct {
@@ -266,7 +269,7 @@ func (s *Storage) ListItems(filter ItemFilter, limit int, newestFirst bool, with
 	} else {
 		selectCols += ", '' as content"
 	}
-	selectCols += ", i.ai_summary, i.ai_summary_at"
+	selectCols += ", i.ai_summary, i.ai_summary_at, i.translation, i.translation_at, i.translation_lang"
 	query := fmt.Sprintf(`
 		select %s
 		from items i
@@ -286,6 +289,7 @@ func (s *Storage) ListItems(filter ItemFilter, limit int, newestFirst bool, with
 			&x.Title, &x.Link, &x.Date,
 			&x.Status, &x.MediaLinks, &x.Content,
 			&x.AISummary, &x.AISummaryAt,
+			&x.Translation, &x.TranslationAt, &x.TranslationLang,
 		)
 		if err != nil {
 			log.Print(err)
@@ -301,12 +305,14 @@ func (s *Storage) GetItem(id int64) *Item {
 	err := s.db.QueryRow(`
 		select
 			i.id, i.guid, i.feed_id, i.title, i.link, i.content,
-			i.date, i.status, i.media_links, i.ai_summary, i.ai_summary_at
+			i.date, i.status, i.media_links, i.ai_summary, i.ai_summary_at,
+			i.translation, i.translation_at, i.translation_lang
 		from items i
 		where i.id = ?
 	`, id).Scan(
 		&i.Id, &i.GUID, &i.FeedId, &i.Title, &i.Link, &i.Content,
 		&i.Date, &i.Status, &i.MediaLinks, &i.AISummary, &i.AISummaryAt,
+		&i.Translation, &i.TranslationAt, &i.TranslationLang,
 	)
 	if err != nil {
 		log.Print(err)
@@ -322,6 +328,11 @@ func (s *Storage) UpdateItemStatus(item_id int64, status ItemStatus) bool {
 
 func (s *Storage) UpdateItemAISummary(item_id int64, summary string, timestamp int64) bool {
 	_, err := s.db.Exec(`update items set ai_summary = ?, ai_summary_at = ? where id = ?`, summary, timestamp, item_id)
+	return err == nil
+}
+
+func (s *Storage) UpdateItemTranslation(item_id int64, translation string, timestamp int64, lang string) bool {
+	_, err := s.db.Exec(`update items set translation = ?, translation_at = ?, translation_lang = ? where id = ?`, translation, timestamp, lang, item_id)
 	return err == nil
 }
 

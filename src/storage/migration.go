@@ -19,6 +19,7 @@ var migrations = []func(*sql.Tx) error{
 	m09_change_item_index,
 	m10_add_item_medialinks,
 	m11_add_ai_summary_fields,
+	m12_add_translation_fields,
 }
 
 var maxVersion = int64(len(migrations))
@@ -335,6 +336,16 @@ func m11_add_ai_summary_fields(tx *sql.Tx) error {
 	sql := `
 		alter table items add column ai_summary text;
 		alter table items add column ai_summary_at integer;
+	`
+	_, err := tx.Exec(sql)
+	return err
+}
+
+func m12_add_translation_fields(tx *sql.Tx) error {
+	sql := `
+		alter table items add column translation text;
+		alter table items add column translation_at integer;
+		alter table items add column translation_lang text;
 	`
 	_, err := tx.Exec(sql)
 	return err

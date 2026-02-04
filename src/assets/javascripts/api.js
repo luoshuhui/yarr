@@ -86,6 +86,13 @@
       summarize: function(id, regenerate) {
         return api('post', './api/items/' + id + '/summarize?regenerate=' + (regenerate ? 'true' : 'false')).then(json)
       },
+      translate: function(id, regenerate, targetLang) {
+        var url = './api/items/' + id + '/translate?regenerate=' + (regenerate ? 'true' : 'false')
+        if (targetLang) {
+          url += '&target_lang=' + encodeURIComponent(targetLang)
+        }
+        return api('post', url).then(json)
+      },
     },
     settings: {
       get: function() {

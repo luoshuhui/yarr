@@ -264,8 +264,14 @@ var vm = new Vue({
         'geminiApiKey': s.gemini_api_key || '',
         'ollamaUrl': s.ollama_url || 'http://localhost:11434',
         'ollamaModel': s.ollama_model || 'qwen2:4b',
+        'summaryProvider': s.summary_provider || s.ai_provider || 'disabled',
+        'translationProvider': s.translation_provider || 'disabled',
+        'translationTarget': s.translation_target || 'zh-CN',
+        'microsoftTranslatorKey': s.microsoft_translator_key || '',
       },
       'summarizing': false,
+      'translating': false,
+      'showTranslation': false,
 
       'refreshRateOptions': [
         { title: "0", value: 0 },
@@ -323,6 +329,19 @@ var vm = new Vue({
 
       return this.itemSelectedDetails.content || ''
     },
+    displayContent: function() {
+      if (!this.itemSelected) return ''
+
+      if (this.itemSelectedReadability)
+        return this.itemSelectedReadability
+
+      // If translation is shown and exists, return translated content
+      if (this.showTranslation && this.itemSelectedDetails.translation) {
+        return this.itemSelectedDetails.translation
+      }
+
+      return this.itemSelectedDetails.content || ''
+    },
     contentImages: function() {
       if (!this.itemSelectedDetails) return []
       return (this.itemSelectedDetails.media_links || []).filter(l => l.type === 'image')
@@ -341,6 +360,9 @@ var vm = new Vue({
     },
     aiProvider: function() {
       return this.aiSettings.provider
+    },
+    translationProvider: function() {
+      return this.aiSettings.translationProvider
     },
   },
   watch: {
@@ -363,9 +385,9 @@ var vm = new Vue({
         var unreadCount = Object.values(this.feedStats).reduce(function(acc, stat) {
           return acc + stat.unread
         }, 0)
-        if (unreadCount) {
-          title += ' ('+unreadCount+')'
-        }
+        //if (unreadCount) {
+        //  title += ' ('+unreadCount+')'
+        //}
         document.title = title
         this.computeStats()
       }, 500),
@@ -388,6 +410,7 @@ var vm = new Vue({
     },
     'itemSelected': function(newVal, oldVal) {
       this.itemSelectedReadability = ''
+      this.showTranslation = false
       if (newVal === null) {
         this.itemSelectedDetails = null
         return
@@ -718,6 +741,10 @@ var vm = new Vue({
           geminiApiKey: s.gemini_api_key || '',
           ollamaUrl: s.ollama_url || 'http://localhost:11434',
           ollamaModel: s.ollama_model || 'qwen2:4b',
+          summaryProvider: s.summary_provider || s.ai_provider || 'disabled',
+          translationProvider: s.translation_provider || 'disabled',
+          translationTarget: s.translation_target || 'zh-CN',
+          microsoftTranslatorKey: s.microsoft_translator_key || '',
         }
       }
     },
@@ -727,12 +754,20 @@ var vm = new Vue({
         gemini_api_key: this.aiSettings.geminiApiKey,
         ollama_url: this.aiSettings.ollamaUrl,
         ollama_model: this.aiSettings.ollamaModel,
+        summary_provider: this.aiSettings.summaryProvider,
+        translation_provider: this.aiSettings.translationProvider,
+        translation_target: this.aiSettings.translationTarget,
+        microsoft_translator_key: this.aiSettings.microsoftTranslatorKey,
       }).then(function() {
         // Update app.settings to reflect changes
         app.settings.ai_provider = vm.aiSettings.provider
         app.settings.gemini_api_key = vm.aiSettings.geminiApiKey
         app.settings.ollama_url = vm.aiSettings.ollamaUrl
         app.settings.ollama_model = vm.aiSettings.ollamaModel
+        app.settings.summary_provider = vm.aiSettings.summaryProvider
+        app.settings.translation_provider = vm.aiSettings.translationProvider
+        app.settings.translation_target = vm.aiSettings.translationTarget
+        app.settings.microsoft_translator_key = vm.aiSettings.microsoftTranslatorKey
         vm.settings = ''
       })
     },
@@ -761,6 +796,29 @@ var vm = new Vue({
       if (diff < 86400) return Math.floor(diff / 3600) + ' hours ago'
       if (diff < 2592000) return Math.floor(diff / 86400) + ' days ago'
       return 'on ' + new Date(timestamp * 1000).toLocaleDateString()
+    },
+    translateArticle: function() {
+      if (!this.itemSelectedDetails) return
+
+      // Toggle translation display if already translated
+      if (this.itemSelectedDetails.translation) {
+        this.showTranslation = !this.showTranslation
+        return
+      }
+
+      this.translating = true
+      var regenerate = !!this.itemSelectedDetails.translation
+
+      api.items.translate(this.itemSelectedDetails.id, regenerate).then(function(result) {
+        vm.itemSelectedDetails.translation = result.translation
+        vm.itemSelectedDetails.translation_at = result.generated_at
+        vm.itemSelectedDetails.translation_lang = result.target_lang
+        vm.showTranslation = true
+        vm.translating = false
+      }).catch(function(err) {
+        alert('Failed to translate: ' + (err.message || 'Unknown error'))
+        vm.translating = false
+      })
     },
     translatePage: function() {
       // Simulate Option+A (macOS) / Alt+A (Windows) keyboard shortcut

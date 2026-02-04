@@ -23,6 +23,7 @@ import (
 	"github.com/nkanaev/yarr/src/server/router"
 	"github.com/nkanaev/yarr/src/storage"
 	"github.com/nkanaev/yarr/src/summarizer"
+	"github.com/nkanaev/yarr/src/translator"
 	"github.com/nkanaev/yarr/src/worker"
 )
 
@@ -56,6 +57,7 @@ func (s *Server) handler() http.Handler {
 	r.For("/api/items", s.handleItemList)
 	r.For("/api/items/:id", s.handleItem)
 	r.For("/api/items/:id/summarize", s.handleItemSummarize)
+	r.For("/api/items/:id/translate", s.handleItemTranslate)
 	r.For("/api/settings", s.handleSettings)
 	r.For("/opml/import", s.handleOPMLImport)
 	r.For("/opml/export", s.handleOPMLExport)
@@ -637,5 +639,122 @@ func (s *Server) handleItemSummarize(c *router.Context) {
 	c.JSON(http.StatusOK, map[string]interface{}{
 		"summary":      summary,
 		"generated_at": timestamp,
+	})
+}
+
+func (s *Server) handleItemTranslate(c *router.Context) {
+	if c.Req.Method != "POST" {
+		c.Out.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	id, err := c.VarInt64("id")
+	if err != nil {
+		c.Out.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// Get the item from database
+	item := s.db.GetItem(id)
+	if item == nil {
+		c.Out.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// Check if regenerate is requested
+	regenerate := c.Req.URL.Query().Get("regenerate") == "true"
+
+	// Get target language from query or use default
+	targetLang := c.Req.URL.Query().Get("target_lang")
+	if targetLang == "" {
+		settings := s.db.GetSettings()
+		if lang, ok := settings["translation_target"].(string); ok && lang != "" {
+			targetLang = lang
+		} else {
+			targetLang = "zh-CN"
+		}
+	}
+
+	// If translation exists for the same language and not regenerating, return cached
+	if item.Translation != nil && item.TranslationLang != nil && !regenerate {
+		if *item.TranslationLang == targetLang {
+			c.JSON(http.StatusOK, map[string]interface{}{
+				"translation":   *item.Translation,
+				"generated_at":  *item.TranslationAt,
+				"target_lang":   *item.TranslationLang,
+			})
+			return
+		}
+	}
+
+	// Get translation configuration from settings
+	settings := s.db.GetSettings()
+	provider, _ := settings["translation_provider"].(string)
+
+	if provider == "" || provider == "disabled" {
+		c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Translation provider not configured",
+		})
+		return
+	}
+
+	// Create translator config
+	config := translator.Config{
+		Provider:   provider,
+		TargetLang: targetLang,
+	}
+
+	// Configure based on provider type
+	if provider == "gemini" {
+		if apiKey, ok := settings["gemini_api_key"].(string); ok {
+			config.APIKey = apiKey
+		}
+	} else if provider == "ollama" {
+		if url, ok := settings["ollama_url"].(string); ok {
+			config.URL = url
+		}
+		if model, ok := settings["ollama_model"].(string); ok {
+			config.Model = model
+		}
+	} else if provider == "microsoft" {
+		if apiKey, ok := settings["microsoft_translator_key"].(string); ok {
+			config.APIKey = apiKey
+		}
+	}
+
+	// Create translator
+	trans, err := translator.New(config)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Translate content paragraph by paragraph (not the AI summary)
+	ctx := c.Req.Context()
+	htmlTranslator := translator.NewHTMLTranslator(trans, ctx, targetLang)
+	translation, err := htmlTranslator.TranslateHTML(item.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to translate: " + err.Error(),
+		})
+		return
+	}
+
+	// Save translation to database
+	timestamp := time.Now().Unix()
+	if !s.db.UpdateItemTranslation(id, translation, timestamp, targetLang) {
+		c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to save translation",
+		})
+		return
+	}
+
+	// Return the translation
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"translation":  translation,
+		"generated_at": timestamp,
+		"target_lang":  targetLang,
 	})
 }

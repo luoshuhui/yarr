@@ -16,10 +16,17 @@ func settingsDefaults() map[string]interface{} {
 		"theme_font":        "",
 		"theme_size":        1,
 		"refresh_rate":      0,
-		"ai_provider":       "disabled",
-		"gemini_api_key":    "",
-		"ollama_url":        "http://localhost:11434",
-		"ollama_model":      "qwen2:4b",
+		// Legacy AI settings (kept for backward compatibility)
+		"ai_provider":    "disabled",
+		"gemini_api_key": "",
+		"ollama_url":     "http://localhost:11434",
+		"ollama_model":   "qwen2:4b",
+		// New AI providers configuration
+		"ai_providers": []interface{}{},
+		// AI usage configuration
+		"summary_provider":     "disabled",
+		"translation_provider": "disabled",
+		"translation_target":   "zh-CN", // Default translation target language
 	}
 }
 

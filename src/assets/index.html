@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>yarr!</title>
+    <title>yarr</title>
     <link rel="stylesheet" href="./static/stylesheets/bootstrap.min.css">
     <link rel="stylesheet" href="./static/stylesheets/app.css">
     <link rel="icon" href="./static/graphicarts/favicon.svg" type="image/svg+xml">
@@ -347,9 +347,11 @@
                     <span class="icon" :class="{'icon-loading': summarizing}">{% inline "zap.svg" %}</span>
                 </button>
                 <button class="toolbar-item"
-                        @click="translatePage()"
-                        title="Translate Page (Immersive Translate)">
-                    <span class="icon">{% inline "globe.svg" %}</span>
+                        v-if="translationProvider !== 'disabled'"
+                        @click="translateArticle()"
+                        :disabled="translating"
+                        :title="itemSelectedDetails.translation ? 'Show/Hide Translation' : 'Translate Article'">
+                    <span class="icon" :class="{'icon-loading': translating}">{% inline "globe.svg" %}</span>
                 </button>
                 <a class="toolbar-item" :href="itemSelectedDetails.link" rel="noopener noreferrer" target="_blank" referrerpolicy="no-referrer" title="Open Link">
                     <span class="icon">{% inline "external-link.svg" %}</span>
@@ -398,7 +400,7 @@
                         <audio class="w-100" controls v-for="media in contentAudios" :src="media.url"></audio>
                         <video class="w-100" controls v-for="media in contentVideos" :src="media.url"></video>
                     </div>
-                    <div v-html="itemSelectedContent"></div>
+                    <div v-html="displayContent"></div>
                 </div>
             </div>
         </div>
@@ -436,9 +438,10 @@
                 </form>
             </div>
             <div v-else-if="settings=='ai'">
-                <p class="cursor-default"><b>AI Summary Settings</b></p>
+                <p class="cursor-default"><b>AI & Translation Settings</b></p>
                 <form @submit.prevent="saveAISettings" class="mt-4">
-                    <label for="ai-provider">AI Provider</label>
+                    <header class="dropdown-header pl-0" role="heading" aria-level="3">AI Provider Configuration</header>
+                    <label for="ai-provider">AI Provider (for Summary & Translation)</label>
                     <select id="ai-provider" class="form-control" v-model="aiSettings.provider">
                         <option value="disabled">Disabled</option>
                         <option value="gemini">Gemini API</option>
@@ -457,6 +460,42 @@
                         <label for="ollama-model" class="mt-3">Model Name</label>
                         <input id="ollama-model" type="text" class="form-control" v-model="aiSettings.ollamaModel" placeholder="qwen2:4b">
                     </div>
+
+                    <div class="dropdown-divider"></div>
+
+                    <header class="dropdown-header pl-0" role="heading" aria-level="3">Feature Configuration</header>
+                    <label for="summary-provider" class="mt-2">Summary Provider</label>
+                    <select id="summary-provider" class="form-control" v-model="aiSettings.summaryProvider">
+                        <option value="disabled">Disabled</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="ollama">Ollama</option>
+                    </select>
+
+                    <label for="translation-provider" class="mt-3">Translation Provider</label>
+                    <select id="translation-provider" class="form-control" v-model="aiSettings.translationProvider">
+                        <option value="disabled">Disabled</option>
+                        <option value="gemini">Gemini AI</option>
+                        <option value="ollama">Ollama AI</option>
+                        <option value="google">Google Translate (Free)</option>
+                        <option value="microsoft">Microsoft Translator</option>
+                    </select>
+
+                    <div v-if="aiSettings.translationProvider === 'microsoft'" class="mt-3">
+                        <label for="microsoft-translator-key">Microsoft Translator API Key</label>
+                        <input id="microsoft-translator-key" type="password" class="form-control" v-model="aiSettings.microsoftTranslatorKey" placeholder="Enter your Microsoft Translator API key">
+                    </div>
+
+                    <label for="translation-target" class="mt-3">Translation Target Language</label>
+                    <select id="translation-target" class="form-control" v-model="aiSettings.translationTarget">
+                        <option value="zh-CN">简体中文 (Simplified Chinese)</option>
+                        <option value="zh-TW">繁體中文 (Traditional Chinese)</option>
+                        <option value="en">English</option>
+                        <option value="ja">日本語 (Japanese)</option>
+                        <option value="ko">한국어 (Korean)</option>
+                        <option value="fr">Français (French)</option>
+                        <option value="de">Deutsch (German)</option>
+                        <option value="es">Español (Spanish)</option>
+                    </select>
 
                     <button class="btn btn-block btn-default mt-3" type="submit">Save</button>
                 </form>
