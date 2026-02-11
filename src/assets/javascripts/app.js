@@ -202,6 +202,11 @@ Vue.component('relative-time', {
   },
 })
 
+Vue.component('subscription-item', {
+  props: ['item', 'depth', 'current', 'itemSelectedDetails', 'feedSelected', 'filterSelected', 'filteredFeedStats', 'filteredFolderStats', 'feedErrors', 'mustHideFolder', 'mustHideFeed'],
+  template: '#subscription-item-template'
+})
+
 var vm = new Vue({
   created: function() {
     this.refreshStats()
@@ -209,8 +214,8 @@ var vm = new Vue({
       .then(this.refreshItems.bind(this, false))
 
     api.feeds.list_errors().then(function(errors) {
-      vm.feed_errors = errors
-    })
+      this.feed_errors = errors
+    }.bind(this))
     this.updateMetaTheme(app.settings.theme_name)
   },
   data: function() {
@@ -287,19 +292,38 @@ var vm = new Vue({
   },
   computed: {
     foldersWithFeeds: function() {
-      var feedsByFolders = this.feeds.reduce(function(folders, feed) {
-        if (!folders[feed.folder_id])
-          folders[feed.folder_id] = [feed]
-        else
-          folders[feed.folder_id].push(feed)
-        return folders
+      var feedsByFolders = this.feeds.reduce(function(acc, feed) {
+        if (!acc[feed.folder_id]) acc[feed.folder_id] = []
+        acc[feed.folder_id].push(feed)
+        return acc
       }, {})
-      var folders = this.folders.slice().map(function(folder) {
-        folder.feeds = feedsByFolders[folder.id]
-        return folder
+
+      var folderMap = {}
+      this.folders.forEach(function(f) {
+        folderMap[f.id] = { type: 'folder', data: f, children: [] }
       })
-      folders.push({id: null, feeds: feedsByFolders[null]})
-      return folders
+
+      var tree = []
+      this.folders.forEach(function(f) {
+        var node = folderMap[f.id]
+        var feeds = (feedsByFolders[f.id] || []).map(function(feed) {
+          return { type: 'feed', data: feed }
+        })
+        node.children = node.children.concat(feeds)
+
+        if (f.parent_id && folderMap[f.parent_id]) {
+          folderMap[f.parent_id].children.push(node)
+        } else {
+          tree.push(node)
+        }
+      })
+
+      // Uncategorized feeds
+      var rootFeeds = (feedsByFolders[null] || []).map(function(feed) {
+        return { type: 'feed', data: feed }
+      })
+
+      return tree.concat(rootFeeds)
     },
     feedsById: function() {
       return this.feeds.reduce(function(acc, f) { acc[f.id] = f; return acc }, {})
@@ -564,6 +588,29 @@ var vm = new Vue({
       folder.is_expanded = !folder.is_expanded
       api.folders.update(folder.id, {is_expanded: folder.is_expanded})
     },
+    reorderItem: function(item, direction) {
+      var isFolder = !!item.is_expanded || item.parent_id !== undefined
+      var list = isFolder ? this.folders : this.feeds
+      var parentField = isFolder ? 'parent_id' : 'folder_id'
+
+      // Get items in the same level
+      var siblings = list.filter(function(x) { return x[parentField] === item[parentField] })
+      var index = siblings.findIndex(function(x) { return x.id === item.id })
+      var newIndex = index + direction
+
+      if (newIndex < 0 || newIndex >= siblings.length) return
+
+      // Swap IDs in the reorder list
+      var ids = siblings.map(function(x) { return x.id })
+      var temp = ids[index]
+      ids[index] = ids[newIndex]
+      ids[newIndex] = temp
+
+      var apiCall = isFolder ? api.folders.reorder : api.feeds.reorder
+      apiCall(ids).then(function() {
+        vm.refreshFeeds()
+      })
+    },
     formatDate: function(datestr) {
       var options = {
         year: "numeric", month: "long", day: "numeric",
@@ -600,6 +647,13 @@ var vm = new Vue({
             }
           })
         })
+      })
+    },
+    createSubfolder: function(folder) {
+      var title = prompt('Enter subfolder name:')
+      if (!title) return
+      api.folders.create({ 'title': title, 'parent_id': folder.id }).then(function() {
+        vm.refreshFeeds()
       })
     },
     renameFolder: function(folder) {
@@ -901,18 +955,30 @@ var vm = new Vue({
 
       var statsFeeds = {}, statsFolders = {}, statsTotal = 0
 
+      // Calculate per-feed stats
       for (var i = 0; i < this.feeds.length; i++) {
         var feed = this.feeds[i]
-        if (!this.feedStats[feed.id]) continue
-
-        var n = vm.feedStats[feed.id][filter] || 0
-
-        if (!statsFolders[feed.folder_id]) statsFolders[feed.folder_id] = 0
-
+        var n = (this.feedStats[feed.id] && this.feedStats[feed.id][filter]) || 0
         statsFeeds[feed.id] = n
-        statsFolders[feed.folder_id] += n
         statsTotal += n
       }
+
+      // Calculate per-folder stats recursively
+      var calcFolderStats = function(folderId) {
+        var sum = 0
+        this.feeds.forEach(function(f) {
+          if (f.folder_id === folderId) sum += statsFeeds[f.id]
+        })
+        this.folders.forEach(function(f) {
+          if (f.parent_id === folderId) sum += calcFolderStats(f.id)
+        }.bind(this))
+        statsFolders[folderId] = sum
+        return sum
+      }.bind(this)
+
+      this.folders.forEach(function(f) {
+        calcFolderStats(f.id)
+      })
 
       this.filteredFeedStats = statsFeeds
       this.filteredFolderStats = statsFolders
@@ -952,30 +1018,35 @@ var vm = new Vue({
     // navigation helper, navigate relative to selected feed
     navigateToFeed: function(relativePosition) {
       let vm = this
-      const navigationList = this.foldersWithFeeds
-        .filter(folder => !folder.id || !vm.mustHideFolder(folder))
-        .map((folder) => {
-          if (this.mustHideFolder(folder)) return []
-          const folds = folder.id ? [`folder:${folder.id}`] : []
-          const feeds = (folder.is_expanded || !folder.id)
-            ? (folder.feeds || []).filter(f => !vm.mustHideFeed(f)).map(f => `feed:${f.id}`)
-            : []
-          return folds.concat(feeds)
+      var flatList = []
+      var walk = function(items) {
+        items.forEach(function(item) {
+          if (item.type === 'folder') {
+            if (!vm.mustHideFolder(item.data)) {
+              flatList.push('folder:' + item.data.id)
+              if (item.data.is_expanded) walk(item.children)
+            }
+          } else {
+            if (!vm.mustHideFeed(item.data)) {
+              flatList.push('feed:' + item.data.id)
+            }
+          }
         })
-        .flat()
-      navigationList.unshift('')
+      }
+      walk(this.foldersWithFeeds)
+      flatList.unshift('')
 
-      var currentFeedPosition = navigationList.indexOf(vm.feedSelected)
-
+      var currentFeedPosition = flatList.indexOf(vm.feedSelected)
       if (currentFeedPosition == -1) {
         vm.feedSelected = ''
         return
       }
 
-      var newPosition = currentFeedPosition+relativePosition
-      if (newPosition < 0 || newPosition >= navigationList.length) return
+      var newPosition = currentFeedPosition + relativePosition
+      if (newPosition < 0 || newPosition >= flatList.length) return
 
-      vm.feedSelected = navigationList[newPosition]
+      vm.feedSelected = flatList[newPosition]
+      // ... rest of scrolling logic
 
       vm.$nextTick(function() {
         var scroll = document.querySelector('#feed-list-scroll')
@@ -992,17 +1063,21 @@ var vm = new Vue({
       if (curIdx >= (this.refreshRateOptions.length - 1) && offset > 0) return
       this.refreshRate = this.refreshRateOptions[curIdx + offset].value
     },
-    mustHideFolder: function (folder) {
+    mustHideFolder: function (folder, current, itemSelectedDetails) {
+      current = current || this.current
+      itemSelectedDetails = itemSelectedDetails || this.itemSelectedDetails
       return this.filterSelected
-        && !(this.current.folder.id == folder.id || this.current.feed.folder_id == folder.id)
+        && !(current.folder.id == folder.id || current.feed.folder_id == folder.id)
         && !this.filteredFolderStats[folder.id]
-        && (!this.itemSelectedDetails || (this.feedsById[this.itemSelectedDetails.feed_id] || {}).folder_id != folder.id)
+        && (!itemSelectedDetails || (this.feedsById[itemSelectedDetails.feed_id] || {}).folder_id != folder.id)
     },
-    mustHideFeed: function (feed) {
+    mustHideFeed: function (feed, current, itemSelectedDetails) {
+      current = current || this.current
+      itemSelectedDetails = itemSelectedDetails || this.itemSelectedDetails
       return this.filterSelected
-        && !(this.current.feed.id == feed.id)
+        && !(current.feed.id == feed.id)
         && !this.filteredFeedStats[feed.id]
-        && (!this.itemSelectedDetails || this.itemSelectedDetails.feed_id != feed.id)
+        && (!itemSelectedDetails || itemSelectedDetails.feed_id != feed.id)
     },
   }
 })

@@ -34,8 +34,8 @@ type testItemScope struct {
 }
 
 func testItemsSetup(db *Storage) testItemScope {
-	folder1 := db.CreateFolder("folder1")
-	folder2 := db.CreateFolder("folder2")
+	folder1 := db.CreateFolder("folder1", nil)
+	folder2 := db.CreateFolder("folder2", nil)
 
 	feed11 := db.CreateFeed("feed11", "", "", "http://test.com/feed11.xml", &folder1.Id)
 	feed12 := db.CreateFeed("feed12", "", "", "http://test.com/feed12.xml", &folder1.Id)

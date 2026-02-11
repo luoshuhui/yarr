@@ -48,8 +48,10 @@ func (s *Server) handler() http.Handler {
 	r.For("/static/*path", s.handleStatic)
 	r.For("/api/status", s.handleStatus)
 	r.For("/api/folders", s.handleFolderList)
+	r.For("/api/folders/reorder", s.handleFolderReorder)
 	r.For("/api/folders/:id", s.handleFolder)
 	r.For("/api/feeds", s.handleFeedList)
+	r.For("/api/feeds/reorder", s.handleFeedReorder)
 	r.For("/api/feeds/refresh", s.handleFeedRefresh)
 	r.For("/api/feeds/errors", s.handleFeedErrors)
 	r.For("/api/feeds/:id/icon", s.handleFeedIcon)
@@ -125,10 +127,34 @@ func (s *Server) handleFolderList(c *router.Context) {
 			c.JSON(http.StatusBadRequest, map[string]string{"error": "Folder title missing."})
 			return
 		}
-		folder := s.db.CreateFolder(body.Title)
+		folder := s.db.CreateFolder(body.Title, body.ParentID)
 		c.JSON(http.StatusCreated, folder)
 	} else {
 		c.Out.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleFolderReorder(c *router.Context) {
+	if c.Req.Method == "POST" {
+		var ids []int64
+		if err := json.NewDecoder(c.Req.Body).Decode(&ids); err != nil {
+			c.Out.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		s.db.ReorderFolders(ids)
+		c.Out.WriteHeader(http.StatusOK)
+	}
+}
+
+func (s *Server) handleFeedReorder(c *router.Context) {
+	if c.Req.Method == "POST" {
+		var ids []int64
+		if err := json.NewDecoder(c.Req.Body).Decode(&ids); err != nil {
+			c.Out.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		s.db.ReorderFeeds(ids)
+		c.Out.WriteHeader(http.StatusOK)
 	}
 }
 
@@ -147,6 +173,9 @@ func (s *Server) handleFolder(c *router.Context) {
 		}
 		if body.Title != nil {
 			s.db.RenameFolder(id, *body.Title)
+		}
+		if body.ParentID != nil {
+			s.db.UpdateFolderParent(id, body.ParentID)
 		}
 		if body.IsExpanded != nil {
 			s.db.ToggleFolderExpanded(id, *body.IsExpanded)
@@ -445,15 +474,24 @@ func (s *Server) handleOPMLImport(c *router.Context) {
 			c.Out.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		for _, f := range doc.Feeds {
-			s.db.CreateFeed(f.Title, "", f.SiteUrl, f.FeedUrl, nil)
-		}
-		for _, f := range doc.Folders {
-			folder := s.db.CreateFolder(f.Title)
-			for _, ff := range f.AllFeeds() {
-				s.db.CreateFeed(ff.Title, "", ff.SiteUrl, ff.FeedUrl, &folder.Id)
+
+		var importFolder func(f opml.Folder, parentID *int64)
+		importFolder = func(f opml.Folder, parentID *int64) {
+			var currentFolderID *int64
+			if f.Title != "" {
+				folder := s.db.CreateFolder(f.Title, parentID)
+				if folder != nil {
+					currentFolderID = &folder.Id
+				}
+			}
+			for _, feed := range f.Feeds {
+				s.db.CreateFeed(feed.Title, "", feed.SiteUrl, feed.FeedUrl, currentFolderID)
+			}
+			for _, sub := range f.Folders {
+				importFolder(sub, currentFolderID)
 			}
 		}
+		importFolder(doc, nil)
 
 		s.worker.FindFavicons()
 		s.worker.RefreshFeeds()
@@ -469,37 +507,38 @@ func (s *Server) handleOPMLExport(c *router.Context) {
 		c.Out.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		c.Out.Header().Set("Content-Disposition", `attachment; filename="subscriptions.opml"`)
 
-		doc := opml.Folder{}
+		allFolders := s.db.ListFolders()
+		allFeeds := s.db.ListFeeds()
 
-		feedsByFolderID := make(map[int64][]*storage.Feed)
-		for _, feed := range s.db.ListFeeds() {
-			feed := feed
-			if feed.FolderId == nil {
-				doc.Feeds = append(doc.Feeds, opml.Feed{
-					Title:   feed.Title,
-					FeedUrl: feed.FeedLink,
-					SiteUrl: feed.Link,
-				})
+		// Map to store feeds by folder id
+		feedsByFolderID := make(map[int64][]opml.Feed)
+		rootFeeds := make([]opml.Feed, 0)
+		for _, f := range allFeeds {
+			opmlFeed := opml.Feed{Title: f.Title, FeedUrl: f.FeedLink, SiteUrl: f.Link}
+			if f.FolderId == nil {
+				rootFeeds = append(rootFeeds, opmlFeed)
 			} else {
-				id := *feed.FolderId
-				feedsByFolderID[id] = append(feedsByFolderID[id], &feed)
+				feedsByFolderID[*f.FolderId] = append(feedsByFolderID[*f.FolderId], opmlFeed)
 			}
 		}
 
-		for _, folder := range s.db.ListFolders() {
-			folderFeeds := feedsByFolderID[folder.Id]
-			if len(folderFeeds) == 0 {
-				continue
+		// Build folder tree
+		folderNodes := make(map[int64]*opml.Folder)
+		for _, f := range allFolders {
+			folderNodes[f.Id] = &opml.Folder{
+				Title: f.Title,
+				Feeds: feedsByFolderID[f.Id],
 			}
-			opmlfolder := opml.Folder{Title: folder.Title}
-			for _, feed := range folderFeeds {
-				opmlfolder.Feeds = append(opmlfolder.Feeds, opml.Feed{
-					Title:   feed.Title,
-					FeedUrl: feed.FeedLink,
-					SiteUrl: feed.Link,
-				})
+		}
+
+		doc := opml.Folder{Feeds: rootFeeds}
+		for _, f := range allFolders {
+			node := folderNodes[f.Id]
+			if f.ParentId == nil {
+				doc.Folders = append(doc.Folders, *node)
+			} else if parent, ok := folderNodes[*f.ParentId]; ok {
+				parent.Folders = append(parent.Folders, *node)
 			}
-			doc.Folders = append(doc.Folders, opmlfolder)
 		}
 
 		c.Out.Write([]byte(doc.OPML()))

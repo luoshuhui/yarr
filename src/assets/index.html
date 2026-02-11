@@ -146,40 +146,23 @@
                         <span class="counter text-right">{{ filteredTotalStats }}</span>
                     </div>
                 </label>
-                <div v-for="folder in foldersWithFeeds">
-                    <label class="selectgroup mt-1"
-                           :class="{'d-none': mustHideFolder(folder)}"
-                           v-if="folder.id">
-                        <input type="radio" name="feed" :value="'folder:'+folder.id" v-model="feedSelected" v-if="folder.id">
-                        <div class="selectgroup-label d-flex align-items-center w-100" v-if="folder.id">
-                            <span class="icon mr-2"
-                                  :class="{expanded: folder.is_expanded}"
-                                  @click.prevent="toggleFolderExpanded(folder)">
-                                {% inline "chevron-right.svg" %}
-                            </span>
-                            <span class="flex-fill text-left text-truncate">{{ folder.title }}</span>
-                            <span class="counter text-right">{{ filteredFolderStats[folder.id] || '' }}</span>
-                        </div>
-                    </label>
-                    <div v-show="!folder.id || folder.is_expanded" class="mt-1" :class="{'pl-3': folder.id}">
-                        <label class="selectgroup"
-                              :class="{'d-none': mustHideFeed(feed)}"
-                               v-for="feed in folder.feeds">
-                            <input type="radio" name="feed" :value="'feed:'+feed.id" v-model="feedSelected">
-                            <div class="selectgroup-label d-flex align-items-center w-100">
-                                <span class="icon mr-2" v-if="!feed.has_icon">{% inline "rss.svg" %}</span>
-                                <span class="icon mr-2" v-else><img :src="'./api/feeds/'+feed.id+'/icon'" alt="" loading="lazy"></span>
-                                <span class="flex-fill text-left text-truncate">{{ feed.title }}</span>
-                                <span class="counter text-right">{{ filteredFeedStats[feed.id] || '' }}</span>
-                                <span class="icon flex-shrink-0 mx-2"
-                                      :title="feed_errors[feed.id]"
-                                      v-if="!filterSelected && feed_errors[feed.id]">
-                                    {% inline "alert-circle.svg" %}
-                                </span>
-                            </div>
-                        </label>
-                    </div>
-                </div>
+                <subscription-item
+                    v-for="item in foldersWithFeeds"
+                    :key="item.type === 'folder' ? 'f:'+item.data.id : 's:'+item.data.id"
+                    :item="item"
+                    :depth="0"
+                    :current="current"
+                    :item-selected-details="itemSelectedDetails"
+                    :feed-selected="feedSelected"
+                    :filter-selected="filterSelected"
+                    :filtered-feed-stats="filteredFeedStats"
+                    :filtered-folder-stats="filteredFolderStats"
+                    :feed-errors="feed_errors"
+                    :must-hide-folder="mustHideFolder"
+                    :must-hide-feed="mustHideFeed"
+                    @select="feedSelected = $event"
+                    @toggle-folder="toggleFolderExpanded"
+                ></subscription-item>
             </div>
             <div class="p-2 toolbar d-flex align-items-center border-top flex-shrink-0" v-if="loading.feeds">
                 <span class="icon loading mx-2"></span>
@@ -229,6 +212,15 @@
                         Feed Link
                     </a>
                     <div class="dropdown-divider" v-if="current.feed.link || current.feed.feed_link"></div>
+                    <button class="dropdown-item" @click="reorderItem(current.feed, -1)">
+                        <span class="icon mr-1">{% inline "chevron-up.svg" %}</span>
+                        Move Up
+                    </button>
+                    <button class="dropdown-item" @click="reorderItem(current.feed, 1)">
+                        <span class="icon mr-1">{% inline "chevron-down.svg" %}</span>
+                        Move Down
+                    </button>
+                    <div class="dropdown-divider"></div>
                     <button class="dropdown-item" @click="renameFeed(current.feed)">
                         <span class="icon mr-1">{% inline "edit.svg" %}</span>
                         Rename
@@ -269,6 +261,19 @@
                         <span class="icon">{% inline "more-horizontal.svg" %}</span>
                     </template>
                     <header class="dropdown-header" role="heading" aria-level="2">{{ current.folder.title }}</header>
+                    <button class="dropdown-item" @click="reorderItem(current.folder, -1)">
+                        <span class="icon mr-1">{% inline "chevron-up.svg" %}</span>
+                        Move Up
+                    </button>
+                    <button class="dropdown-item" @click="reorderItem(current.folder, 1)">
+                        <span class="icon mr-1">{% inline "chevron-down.svg" %}</span>
+                        Move Down
+                    </button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" @click="createSubfolder(current.folder)">
+                        <span class="icon mr-1">{% inline "folder-plus.svg" %}</span>
+                        New Subfolder
+                    </button>
                     <button class="dropdown-item" @click="renameFolder(current.folder)">
                         <span class="icon mr-1">{% inline "edit.svg" %}</span>
                         Rename
@@ -525,6 +530,47 @@
             </div>
         </modal>
     </div>
+    <script type="x-template" id="subscription-item-template">
+        <div :class="{'pl-3': depth > 0}">
+          <div v-if="item.type === 'folder' && item.data.id">
+            <label class="selectgroup mt-1" :class="{'d-none': mustHideFolder(item.data, current, itemSelectedDetails)}">
+              <input type="radio" name="feed" :value="'folder:'+item.data.id" :checked="feedSelected === 'folder:'+item.data.id" @change="$emit('select', 'folder:'+item.data.id)">
+              <div class="selectgroup-label d-flex align-items-center w-100">
+                <span class="icon mr-2" :class="{expanded: item.data.is_expanded}" @click.prevent="$emit('toggle-folder', item.data)">
+                  {% inline "chevron-right.svg" %}
+                </span>
+                <span class="flex-fill text-left text-truncate">{{ item.data.title }}</span>
+                <span class="counter text-right">{{ filteredFolderStats[item.data.id] || '' }}</span>
+              </div>
+            </label>
+            <div v-show="item.data.is_expanded">
+              <subscription-item
+                v-for="child in item.children"
+                :key="'f:'+child.data.id"
+                :item="child"
+                :depth="depth + 1"
+                v-bind="$props"
+                @select="$emit('select', $event)"
+                @toggle-folder="$emit('toggle-folder', $event)"
+              ></subscription-item>
+            </div>
+          </div>
+          <div v-else-if="item.type === 'feed'">
+            <label class="selectgroup" :class="{'d-none': mustHideFeed(item.data, current, itemSelectedDetails)}">
+              <input type="radio" name="feed" :value="'feed:'+item.data.id" :checked="feedSelected === 'feed:'+item.data.id" @change="$emit('select', 'feed:'+item.data.id)">
+              <div class="selectgroup-label d-flex align-items-center w-100">
+                <span class="icon mr-2" v-if="!item.data.has_icon">{% inline "rss.svg" %}</span>
+                <span class="icon mr-2" v-else><img :src="'./api/feeds/'+item.data.id+'/icon'" alt="" loading="lazy"></span>
+                <span class="flex-fill text-left text-truncate">{{ item.data.title }}</span>
+                <span class="counter text-right">{{ filteredFeedStats[item.data.id] || '' }}</span>
+                <span class="icon flex-shrink-0 mx-2" :title="feedErrors[item.data.id]" v-if="!filterSelected && feedErrors[item.data.id]">
+                  {% inline "alert-circle.svg" %}
+                </span>
+              </div>
+            </label>
+          </div>
+        </div>
+    </script>
     <!-- external -->
     <script src="./static/javascripts/vue.min.js"></script>
     <!-- internal -->

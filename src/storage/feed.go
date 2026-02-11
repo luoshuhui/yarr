@@ -81,13 +81,21 @@ func (s *Storage) UpdateFeedIcon(feedId int64, icon *[]byte) bool {
 	return err == nil
 }
 
+func (s *Storage) ReorderFeeds(ids []int64) {
+	tx, _ := s.db.Begin()
+	for i, id := range ids {
+		tx.Exec(`update feeds set sort_order = ? where id = ?`, i, id)
+	}
+	tx.Commit()
+}
+
 func (s *Storage) ListFeeds() []Feed {
 	result := make([]Feed, 0)
 	rows, err := s.db.Query(`
 		select id, folder_id, title, description, link, feed_link,
 		       ifnull(length(icon), 0) > 0 as has_icon
 		from feeds
-		order by title collate nocase
+		order by sort_order asc, title collate nocase
 	`)
 	if err != nil {
 		log.Print(err)

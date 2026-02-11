@@ -20,6 +20,8 @@ var migrations = []func(*sql.Tx) error{
 	m10_add_item_medialinks,
 	m11_add_ai_summary_fields,
 	m12_add_translation_fields,
+	m13_add_folder_parent_id,
+	m14_add_sort_order,
 }
 
 var maxVersion = int64(len(migrations))
@@ -348,5 +350,20 @@ func m12_add_translation_fields(tx *sql.Tx) error {
 		alter table items add column translation_lang text;
 	`
 	_, err := tx.Exec(sql)
+	return err
+}
+
+func m13_add_folder_parent_id(tx *sql.Tx) error {
+	sql := `alter table folders add column parent_id integer references folders(id) on delete cascade`
+	_, err := tx.Exec(sql)
+	return err
+}
+
+func m14_add_sort_order(tx *sql.Tx) error {
+	_, err := tx.Exec(`alter table folders add column sort_order integer not null default 0`)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`alter table feeds add column sort_order integer not null default 0`)
 	return err
 }

@@ -51,7 +51,7 @@ func TestReadFeed(t *testing.T) {
 func TestUpdateFeed(t *testing.T) {
 	db := testDB()
 	feed1 := db.CreateFeed("feed 1", "", "http://example1.com", "http://example1.com/feed.xml", nil)
-	folder := db.CreateFolder("test")
+	folder := db.CreateFolder("test", nil)
 	icon := []byte("icon")
 
 	db.RenameFeed(feed1.Id, "newtitle")

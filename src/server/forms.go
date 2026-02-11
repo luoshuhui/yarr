@@ -7,11 +7,13 @@ type ItemUpdateForm struct {
 }
 
 type FolderCreateForm struct {
-	Title string `json:"title"`
+	Title    string `json:"title"`
+	ParentID *int64 `json:"parent_id"`
 }
 
 type FolderUpdateForm struct {
 	Title      *string `json:"title,omitempty"`
+	ParentID   *int64  `json:"parent_id,omitempty"`
 	IsExpanded *bool   `json:"is_expanded,omitempty"`
 }
 
